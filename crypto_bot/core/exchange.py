@@ -7,28 +7,32 @@ import config
 
 
 class ExchangeWrapper:
-    """Thin wrapper around ccxt Binance with retry logic and paper-trading support.
+    """Binance wrapper supporting spot, futures USDM, testnet, and live modes.
 
-    Two internal clients are maintained:
-    - _exchange : testnet or live, used for orders and live price feeds
-    - _public   : always real Binance (no auth), used for historical OHLCV data
-                  because the testnet has <50 candles of history
+    Clients:
+    - _exchange : authenticated client for orders (testnet/live, spot or futures)
+    - _public   : unauthenticated real Binance spot client for historical OHLCV
+                  (testnet has <50 candles; futures public data is the same prices)
     """
 
     MAX_RETRIES = 5
-    RETRY_DELAY = 2  # seconds, doubles each retry
+    RETRY_DELAY = 2
 
     def __init__(self):
         self._exchange = self._build_exchange()
         self._public = self._build_public_client()
         self.mode = config.TRADING_MODE
+        self.use_futures = config.USE_FUTURES
+        if self.use_futures:
+            self._init_leverage()
 
     # ─── Construction ────────────────────────────────────────────────────────
 
     def _build_exchange(self) -> ccxt.Exchange:
+        market_type = "future" if config.USE_FUTURES else "spot"
         params: dict = {
             "enableRateLimit": True,
-            "options": {"defaultType": "spot"},
+            "options": {"defaultType": market_type},
         }
 
         if config.USE_TESTNET:
@@ -36,18 +40,41 @@ class ExchangeWrapper:
             params["secret"] = config.BINANCE_TESTNET_API_SECRET
             exchange = ccxt.binance(params)
             exchange.set_sandbox_mode(True)
-            logger.info("Exchange initialised in TESTNET (paper) mode")
+            mode_label = f"FUTURES {config.FUTURES_LEVERAGE}x" if config.USE_FUTURES else "SPOT"
+            logger.info(f"Exchange initialised in TESTNET ({mode_label}) paper mode")
         else:
             params["apiKey"] = config.BINANCE_API_KEY
             params["secret"] = config.BINANCE_API_SECRET
             exchange = ccxt.binance(params)
-            logger.info("Exchange initialised in LIVE mode")
+            mode_label = f"FUTURES {config.FUTURES_LEVERAGE}x" if config.USE_FUTURES else "SPOT"
+            logger.info(f"Exchange initialised in LIVE ({mode_label}) mode")
 
         return exchange
 
     def _build_public_client(self) -> ccxt.Exchange:
-        """Unauthenticated real Binance client — only used for market data."""
+        """Unauthenticated real Binance spot client — used only for OHLCV history."""
         return ccxt.binance({"enableRateLimit": True, "options": {"defaultType": "spot"}})
+
+    def _init_leverage(self) -> None:
+        """Set leverage and margin mode for all configured symbols."""
+        for symbol in config.SYMBOLS:
+            try:
+                self._retry(
+                    self._exchange.set_leverage,
+                    config.FUTURES_LEVERAGE,
+                    symbol,
+                )
+                self._retry(
+                    self._exchange.set_margin_mode,
+                    config.MARGIN_MODE,
+                    symbol,
+                )
+                logger.info(
+                    f"Futures: {symbol} leverage={config.FUTURES_LEVERAGE}x "
+                    f"margin={config.MARGIN_MODE}"
+                )
+            except Exception as exc:
+                logger.warning(f"Could not set leverage for {symbol}: {exc}")
 
     # ─── Data fetching ───────────────────────────────────────────────────────
 
@@ -66,7 +93,6 @@ class ExchangeWrapper:
         limit: int = 500,
         since: Optional[int] = None,
     ) -> pd.DataFrame:
-        """Recent candles via the trading client (testnet or live)."""
         raw = self._retry(
             self._exchange.fetch_ohlcv,
             symbol,
@@ -79,11 +105,7 @@ class ExchangeWrapper:
     def fetch_ohlcv_full_history(
         self, symbol: str, timeframe: str, months: int = 12
     ) -> pd.DataFrame:
-        """Paginate through `months` of history using the PUBLIC real Binance client.
-
-        The testnet only exposes a handful of candles, so historical data
-        always comes from the real exchange (read-only, no auth required).
-        """
+        """Paginate full history from real public Binance (testnet has no history)."""
         tf_ms = self._public.parse_timeframe(timeframe) * 1000
         since = self._public.milliseconds() - months * 30 * 24 * 3600 * 1000
         frames: list[pd.DataFrame] = []
@@ -113,12 +135,11 @@ class ExchangeWrapper:
         result.sort_index(inplace=True)
         logger.info(
             f"Fetched {len(result)} candles for {symbol} [{timeframe}] "
-            f"({months} months) via public endpoint"
+            f"({months} months)"
         )
         return result
 
     def fetch_ticker(self, symbol: str) -> dict:
-        # Use public client for ticker too — works without auth on testnet
         try:
             return self._retry(self._public.fetch_ticker, symbol)
         except Exception:
@@ -130,16 +151,27 @@ class ExchangeWrapper:
     # ─── Order management ────────────────────────────────────────────────────
 
     def create_market_buy(self, symbol: str, quantity: float) -> dict:
-        logger.info(f"[{self.mode.upper()}] MARKET BUY {quantity} {symbol}")
-        return self._retry(
-            self._exchange.create_market_buy_order, symbol, quantity
-        )
+        label = f"FUTURES {config.FUTURES_LEVERAGE}x" if self.use_futures else "SPOT"
+        logger.info(f"[{self.mode.upper()}][{label}] MARKET BUY {quantity} {symbol}")
+        if self.use_futures:
+            # Open a LONG position in futures
+            return self._retry(
+                self._exchange.create_market_order,
+                symbol, "buy", quantity, params={"positionSide": "LONG"}
+            )
+        return self._retry(self._exchange.create_market_buy_order, symbol, quantity)
 
     def create_market_sell(self, symbol: str, quantity: float) -> dict:
-        logger.info(f"[{self.mode.upper()}] MARKET SELL {quantity} {symbol}")
-        return self._retry(
-            self._exchange.create_market_sell_order, symbol, quantity
-        )
+        label = f"FUTURES {config.FUTURES_LEVERAGE}x" if self.use_futures else "SPOT"
+        logger.info(f"[{self.mode.upper()}][{label}] MARKET SELL {quantity} {symbol}")
+        if self.use_futures:
+            # Close a LONG position in futures
+            return self._retry(
+                self._exchange.create_market_order,
+                symbol, "sell", quantity,
+                params={"positionSide": "LONG", "reduceOnly": True}
+            )
+        return self._retry(self._exchange.create_market_sell_order, symbol, quantity)
 
     def fetch_open_orders(self, symbol: str) -> list:
         return self._retry(self._exchange.fetch_open_orders, symbol)

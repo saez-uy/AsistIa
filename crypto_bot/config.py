@@ -13,6 +13,11 @@ BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 BINANCE_TESTNET_API_KEY = os.getenv("BINANCE_TESTNET_API_KEY", "")
 BINANCE_TESTNET_API_SECRET = os.getenv("BINANCE_TESTNET_API_SECRET", "")
 
+# ─── Futures / leverage ───────────────────────────────────────────────────────
+USE_FUTURES = os.getenv("USE_FUTURES", "false").lower() == "true"
+FUTURES_LEVERAGE = int(os.getenv("FUTURES_LEVERAGE", "2"))   # 1 = spot equivalent
+MARGIN_MODE = "isolated"   # "isolated" keeps risk per-position; never use "cross"
+
 # ─── Trading pairs ───────────────────────────────────────────────────────────
 SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"]
 QUOTE_CURRENCY = "USDT"

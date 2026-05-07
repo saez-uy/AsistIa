@@ -87,10 +87,11 @@ class BacktestEngine:
                 )
 
                 if should_exit:
-                    proceeds = current_price * pos["qty"]
                     pnl_usdt = (current_price - pos["entry"]) * pos["qty"]
                     pnl_pct = (current_price - pos["entry"]) / pos["entry"] * 100
-                    capital += proceeds  # return full position value, not just PnL
+                    # Return margin + PnL (futures) or full notional (spot)
+                    margin = pos.get("margin", pos["entry"] * pos["qty"])
+                    capital += margin + pnl_usdt
 
                     self.trades.append(
                         {
@@ -114,18 +115,23 @@ class BacktestEngine:
                 signal.symbol = self.symbol
 
                 if signal.action == "buy":
+                    leverage = config.FUTURES_LEVERAGE if config.USE_FUTURES else 1
                     sl = price * (1 - config.STOP_LOSS_PCT)
                     risk_amount = capital * config.MAX_RISK_PER_TRADE
                     price_risk = config.STOP_LOSS_PCT
 
-                    # Cap position value to 95% of available cash
+                    # Notional position value (amplified by leverage)
                     ideal_value = risk_amount / price_risk
-                    max_value = capital * 0.95
+                    max_margin = capital * 0.95
+                    max_value = max_margin * leverage
                     position_value = min(ideal_value, max_value)
+
+                    # Margin actually reserved from capital
+                    margin_used = position_value / leverage
                     qty = round(position_value / price, 6)
 
-                    if qty > 0 and position_value <= capital:
-                        capital -= position_value
+                    if qty > 0 and margin_used <= capital:
+                        capital -= margin_used   # only deduct margin, not notional
                         position = {
                             "entry": price,
                             "qty": qty,
@@ -134,6 +140,7 @@ class BacktestEngine:
                             "entry_time": df.index[i],
                             "highest_price": price,
                             "trailing_active": False,
+                            "margin": margin_used,
                         }
 
             equity_curve.append(capital + (position["qty"] * price if position else 0))
@@ -156,7 +163,8 @@ class BacktestEngine:
                     "exit_time": str(df.index[-1]),
                 }
             )
-            capital += last_price * position["qty"]  # return full position value
+            margin = position.get("margin", position["entry"] * position["qty"])
+            capital += margin + pnl_usdt
 
         self._equity = equity_curve
         self._final_capital = capital

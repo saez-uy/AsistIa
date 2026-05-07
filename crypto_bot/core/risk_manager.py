@@ -19,29 +19,34 @@ class RiskManager:
     def calculate_position_size(
         self, entry_price: float, stop_loss_price: float
     ) -> float:
-        """Return quantity to buy using fixed-fractional sizing.
+        """Return quantity to buy using fixed-fractional sizing with leverage support.
 
-        Targets 2% capital at risk, but caps position value at 95% of cash
-        so small accounts (<$700) can still trade without exceeding balance.
+        In spot mode  : position value capped at 95% of cash.
+        In futures mode: margin capped at 95% of cash; position value = margin × leverage.
+        The stop loss percentage is set relative to the NOTIONAL price move so PnL
+        is already amplified — we don't double-count leverage in the risk formula.
         """
+        leverage = config.FUTURES_LEVERAGE if config.USE_FUTURES else 1
         risk_amount = self.capital * config.MAX_RISK_PER_TRADE
         price_risk = abs(entry_price - stop_loss_price) / entry_price
         if price_risk == 0:
             logger.warning("price_risk is zero, skipping position")
             return 0.0
 
-        # Ideal position value from risk formula
+        # Notional position value from risk formula (before leverage)
         ideal_position_value = risk_amount / price_risk
 
-        # Cap to available cash so we never exceed balance
-        max_position_value = self.capital * self.MAX_POSITION_CAPITAL_FRACTION
+        # In futures: margin = position_value / leverage, capped to 95% of cash
+        max_margin = self.capital * self.MAX_POSITION_CAPITAL_FRACTION
+        max_position_value = max_margin * leverage
         position_value = min(ideal_position_value, max_position_value)
 
         if position_value < ideal_position_value:
             actual_risk_pct = (position_value * price_risk) / self.capital * 100
             logger.debug(
-                f"Position capped to {max_position_value:.2f} USDT "
-                f"(actual risk: {actual_risk_pct:.2f}% vs target {config.MAX_RISK_PER_TRADE*100:.1f}%)"
+                f"Position capped to {position_value:.2f} USDT notional "
+                f"(margin: {position_value/leverage:.2f}) "
+                f"actual risk: {actual_risk_pct:.2f}%"
             )
 
         quantity = position_value / entry_price
