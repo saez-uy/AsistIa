@@ -116,10 +116,15 @@ class BacktestEngine:
                     sl = price * (1 - config.STOP_LOSS_PCT)
                     risk_amount = capital * config.MAX_RISK_PER_TRADE
                     price_risk = config.STOP_LOSS_PCT
-                    qty = round(risk_amount / (price * price_risk), 6)
 
-                    if qty * price <= capital:
-                        capital -= qty * price
+                    # Cap position value to 95% of available cash
+                    ideal_value = risk_amount / price_risk
+                    max_value = capital * 0.95
+                    position_value = min(ideal_value, max_value)
+                    qty = round(position_value / price, 6)
+
+                    if qty > 0 and position_value <= capital:
+                        capital -= position_value
                         position = {
                             "entry": price,
                             "qty": qty,

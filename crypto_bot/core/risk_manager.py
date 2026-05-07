@@ -13,16 +13,38 @@ class RiskManager:
 
     # ─── Position sizing ─────────────────────────────────────────────────────
 
+    # Maximum fraction of cash to spend on a single position (leaves buffer for fees)
+    MAX_POSITION_CAPITAL_FRACTION = 0.95
+
     def calculate_position_size(
         self, entry_price: float, stop_loss_price: float
     ) -> float:
-        """Return quantity to buy using fixed-fractional sizing (2% risk per trade)."""
+        """Return quantity to buy using fixed-fractional sizing.
+
+        Targets 2% capital at risk, but caps position value at 95% of cash
+        so small accounts (<$700) can still trade without exceeding balance.
+        """
         risk_amount = self.capital * config.MAX_RISK_PER_TRADE
         price_risk = abs(entry_price - stop_loss_price) / entry_price
         if price_risk == 0:
             logger.warning("price_risk is zero, skipping position")
             return 0.0
-        quantity = risk_amount / (entry_price * price_risk)
+
+        # Ideal position value from risk formula
+        ideal_position_value = risk_amount / price_risk
+
+        # Cap to available cash so we never exceed balance
+        max_position_value = self.capital * self.MAX_POSITION_CAPITAL_FRACTION
+        position_value = min(ideal_position_value, max_position_value)
+
+        if position_value < ideal_position_value:
+            actual_risk_pct = (position_value * price_risk) / self.capital * 100
+            logger.debug(
+                f"Position capped to {max_position_value:.2f} USDT "
+                f"(actual risk: {actual_risk_pct:.2f}% vs target {config.MAX_RISK_PER_TRADE*100:.1f}%)"
+            )
+
+        quantity = position_value / entry_price
         return round(quantity, 6)
 
     def calculate_stop_loss(self, entry_price: float) -> float:
