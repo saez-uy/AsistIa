@@ -53,14 +53,12 @@ def compute_metrics(
     )
 
     total_return = (equity_curve[-1] - initial_capital) / initial_capital
-    n_months = max(
-        (
-            (df["exit_time"].max() - df["entry_time"].min()).days / 30
-            if "exit_time" in df.columns
-            else 1
-        ),
-        1,
-    )
+    try:
+        t_end = pd.to_datetime(df["exit_time"]).max()
+        t_start = pd.to_datetime(df["entry_time"]).min()
+        n_months = max((t_end - t_start).days / 30, 1)
+    except Exception:
+        n_months = 1
     monthly_return = (1 + total_return) ** (1 / n_months) - 1
 
     metrics = {
