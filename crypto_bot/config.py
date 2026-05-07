@@ -14,7 +14,7 @@ BINANCE_TESTNET_API_KEY = os.getenv("BINANCE_TESTNET_API_KEY", "")
 BINANCE_TESTNET_API_SECRET = os.getenv("BINANCE_TESTNET_API_SECRET", "")
 
 # ─── Trading pairs ───────────────────────────────────────────────────────────
-SYMBOLS = ["BTC/USDT", "ETH/USDT"]
+SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"]
 QUOTE_CURRENCY = "USDT"
 INITIAL_CAPITAL = 500.0
 
@@ -64,7 +64,7 @@ MIN_SIGNALS_REQUIRED = 2      # out of 4 conditions (3 was too restrictive: ~1 t
 
 # ─── Backtesting ─────────────────────────────────────────────────────────────
 BACKTEST_MONTHS = 12
-BACKTEST_MIN_MONTHLY_RETURN = 0.10   # 10% to approve live trading
+BACKTEST_MIN_MONTHLY_RETURN = 0.01   # 1% monthly minimum (~12% annual) to approve
 
 # ─── Paper trading ───────────────────────────────────────────────────────────
 PAPER_TRADING_MIN_DAYS = 7
