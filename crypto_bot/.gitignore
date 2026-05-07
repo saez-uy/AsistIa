@@ -1,0 +1,14 @@
+.env
+*.db
+*.log
+logs/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+backtest_*.png
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
