@@ -95,7 +95,7 @@ class DBManager:
                     quantity, pnl_usdt, pnl_pct, exit_reason, mode)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    trade.get("exit_time"),
+                    str(trade.get("exit_time", "")),
                     trade["symbol"],
                     "buy",
                     trade["entry_price"],

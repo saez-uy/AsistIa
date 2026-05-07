@@ -87,9 +87,10 @@ class BacktestEngine:
                 )
 
                 if should_exit:
+                    proceeds = current_price * pos["qty"]
                     pnl_usdt = (current_price - pos["entry"]) * pos["qty"]
                     pnl_pct = (current_price - pos["entry"]) / pos["entry"] * 100
-                    capital += pnl_usdt
+                    capital += proceeds  # return full position value, not just PnL
 
                     self.trades.append(
                         {
@@ -100,8 +101,8 @@ class BacktestEngine:
                             "pnl_usdt": round(pnl_usdt, 4),
                             "pnl_pct": round(pnl_pct, 4),
                             "exit_reason": reason,
-                            "entry_time": pos["entry_time"],
-                            "exit_time": df.index[i],
+                            "entry_time": str(pos["entry_time"]),
+                            "exit_time": str(df.index[i]),
                         }
                     )
                     position = None
@@ -151,11 +152,11 @@ class BacktestEngine:
                     "pnl_usdt": round(pnl_usdt, 4),
                     "pnl_pct": round(pnl_pct, 4),
                     "exit_reason": "end_of_data",
-                    "entry_time": position["entry_time"],
-                    "exit_time": df.index[-1],
+                    "entry_time": str(position["entry_time"]),
+                    "exit_time": str(df.index[-1]),
                 }
             )
-            capital += pnl_usdt
+            capital += last_price * position["qty"]  # return full position value
 
         self._equity = equity_curve
         self._final_capital = capital
