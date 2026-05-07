@@ -31,6 +31,7 @@ def add_trend_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["macd_signal"] = macd["macd_signal"]
     df["macd_hist"] = macd["macd_hist"]
 
+    # ── LONG signals ──────────────────────────────────────────────────────────
     df["ema_cross_up"] = (
         (df[f"ema_{EMA_FAST}"] > df[f"ema_{EMA_SLOW}"])
         & (df[f"ema_{EMA_FAST}"].shift(1) <= df[f"ema_{EMA_SLOW}"].shift(1))
@@ -43,6 +44,21 @@ def add_trend_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["macd_hist_declining"] = (
         (df["macd_hist"] < df["macd_hist"].shift(1))
         & (df["macd_hist"].shift(1) < df["macd_hist"].shift(2))
+    ).astype(int)
+
+    # ── SHORT signals ─────────────────────────────────────────────────────────
+    df["ema_cross_down"] = (
+        (df[f"ema_{EMA_FAST}"] < df[f"ema_{EMA_SLOW}"])
+        & (df[f"ema_{EMA_FAST}"].shift(1) >= df[f"ema_{EMA_SLOW}"].shift(1))
+    ).astype(int)
+
+    df["macd_hist_cross_down"] = (
+        (df["macd_hist"] < 0) & (df["macd_hist"].shift(1) >= 0)
+    ).astype(int)
+
+    df["macd_hist_rising"] = (
+        (df["macd_hist"] > df["macd_hist"].shift(1))
+        & (df["macd_hist"].shift(1) > df["macd_hist"].shift(2))
     ).astype(int)
 
     return df

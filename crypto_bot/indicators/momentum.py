@@ -1,12 +1,11 @@
 import pandas as pd
-from config import RSI_PERIOD, RSI_OVERSOLD, STOCH_K, STOCH_D, STOCH_SMOOTH
+from config import RSI_PERIOD, RSI_OVERSOLD, RSI_OVERBOUGHT_EXIT, STOCH_K, STOCH_D, STOCH_SMOOTH
 
 
 def calculate_rsi(series: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
     delta = series.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-    # Wilder's smoothing (equivalent to EMA with alpha=1/period)
     avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0, float("nan"))
@@ -37,8 +36,14 @@ def add_momentum_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["stoch_k"] = stoch["stoch_k"]
     df["stoch_d"] = stoch["stoch_d"]
 
+    # LONG entry: RSI leaves oversold territory
     df["rsi_cross_up_oversold"] = (
         (df["rsi"] > RSI_OVERSOLD) & (df["rsi"].shift(1) <= RSI_OVERSOLD)
+    ).astype(int)
+
+    # SHORT entry: RSI leaves overbought territory
+    df["rsi_cross_down_overbought"] = (
+        (df["rsi"] < RSI_OVERBOUGHT_EXIT) & (df["rsi"].shift(1) >= RSI_OVERBOUGHT_EXIT)
     ).astype(int)
 
     return df

@@ -30,8 +30,9 @@ LOOP_INTERVAL_MINUTES = 15
 
 # ─── Indicator parameters ────────────────────────────────────────────────────
 RSI_PERIOD = 14
-RSI_OVERSOLD = 35
-RSI_OVERBOUGHT = 70
+RSI_OVERSOLD = 35       # long entry: RSI crosses above this (leaving oversold)
+RSI_OVERBOUGHT = 70     # long exit signal
+RSI_OVERBOUGHT_EXIT = 65  # short entry: RSI crosses below this (leaving overbought)
 
 EMA_FAST = 9
 EMA_SLOW = 21
