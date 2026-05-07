@@ -143,7 +143,16 @@ class BacktestEngine:
                             "margin": margin_used,
                         }
 
-            equity_curve.append(capital + (position["qty"] * price if position else 0))
+            # Equity = cash + open position value
+            # Futures: cash + margin + unrealised PnL  (not the full notional)
+            # Spot   : cash + qty * current_price
+            if position:
+                unrealised = (price - position["entry"]) * position["qty"]
+                margin = position.get("margin", position["entry"] * position["qty"])
+                pos_equity = margin + unrealised
+            else:
+                pos_equity = 0.0
+            equity_curve.append(capital + pos_equity)
 
         # Close any open position at last price
         if position is not None:
