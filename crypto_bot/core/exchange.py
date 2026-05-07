@@ -7,13 +7,20 @@ import config
 
 
 class ExchangeWrapper:
-    """Thin wrapper around ccxt Binance with retry logic and paper-trading support."""
+    """Thin wrapper around ccxt Binance with retry logic and paper-trading support.
+
+    Two internal clients are maintained:
+    - _exchange : testnet or live, used for orders and live price feeds
+    - _public   : always real Binance (no auth), used for historical OHLCV data
+                  because the testnet has <50 candles of history
+    """
 
     MAX_RETRIES = 5
     RETRY_DELAY = 2  # seconds, doubles each retry
 
     def __init__(self):
         self._exchange = self._build_exchange()
+        self._public = self._build_public_client()
         self.mode = config.TRADING_MODE
 
     # ─── Construction ────────────────────────────────────────────────────────
@@ -38,7 +45,19 @@ class ExchangeWrapper:
 
         return exchange
 
+    def _build_public_client(self) -> ccxt.Exchange:
+        """Unauthenticated real Binance client — only used for market data."""
+        return ccxt.binance({"enableRateLimit": True, "options": {"defaultType": "spot"}})
+
     # ─── Data fetching ───────────────────────────────────────────────────────
+
+    def _raw_to_df(self, raw: list) -> pd.DataFrame:
+        df = pd.DataFrame(
+            raw, columns=["timestamp", "open", "high", "low", "close", "volume"]
+        )
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+        df.set_index("timestamp", inplace=True)
+        return df.astype(float)
 
     def fetch_ohlcv(
         self,
@@ -47,7 +66,7 @@ class ExchangeWrapper:
         limit: int = 500,
         since: Optional[int] = None,
     ) -> pd.DataFrame:
-        """Return OHLCV as a DataFrame with a UTC DatetimeIndex."""
+        """Recent candles via the trading client (testnet or live)."""
         raw = self._retry(
             self._exchange.fetch_ohlcv,
             symbol,
@@ -55,32 +74,37 @@ class ExchangeWrapper:
             since=since,
             limit=limit,
         )
-        df = pd.DataFrame(
-            raw, columns=["timestamp", "open", "high", "low", "close", "volume"]
-        )
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-        df.set_index("timestamp", inplace=True)
-        df = df.astype(float)
-        return df
+        return self._raw_to_df(raw)
 
     def fetch_ohlcv_full_history(
         self, symbol: str, timeframe: str, months: int = 12
     ) -> pd.DataFrame:
-        """Paginate back through `months` months of OHLCV data."""
-        tf_ms = self._exchange.parse_timeframe(timeframe) * 1000
-        since = self._exchange.milliseconds() - months * 30 * 24 * 3600 * 1000
+        """Paginate through `months` of history using the PUBLIC real Binance client.
+
+        The testnet only exposes a handful of candles, so historical data
+        always comes from the real exchange (read-only, no auth required).
+        """
+        tf_ms = self._public.parse_timeframe(timeframe) * 1000
+        since = self._public.milliseconds() - months * 30 * 24 * 3600 * 1000
         frames: list[pd.DataFrame] = []
 
         while True:
-            chunk = self.fetch_ohlcv(symbol, timeframe, limit=1000, since=since)
-            if chunk.empty:
+            raw = self._retry(
+                self._public.fetch_ohlcv,
+                symbol,
+                timeframe,
+                since=since,
+                limit=1000,
+            )
+            if not raw:
                 break
+            chunk = self._raw_to_df(raw)
             frames.append(chunk)
             last_ts = int(chunk.index[-1].timestamp() * 1000)
             since = last_ts + tf_ms
-            if since >= self._exchange.milliseconds():
+            if since >= self._public.milliseconds():
                 break
-            time.sleep(self._exchange.rateLimit / 1000)
+            time.sleep(self._public.rateLimit / 1000)
 
         if not frames:
             return pd.DataFrame()
@@ -89,12 +113,16 @@ class ExchangeWrapper:
         result.sort_index(inplace=True)
         logger.info(
             f"Fetched {len(result)} candles for {symbol} [{timeframe}] "
-            f"({months} months)"
+            f"({months} months) via public endpoint"
         )
         return result
 
     def fetch_ticker(self, symbol: str) -> dict:
-        return self._retry(self._exchange.fetch_ticker, symbol)
+        # Use public client for ticker too — works without auth on testnet
+        try:
+            return self._retry(self._public.fetch_ticker, symbol)
+        except Exception:
+            return self._retry(self._exchange.fetch_ticker, symbol)
 
     def fetch_balance(self) -> dict:
         return self._retry(self._exchange.fetch_balance)
