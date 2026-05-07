@@ -60,7 +60,7 @@ TRAILING_STOP_PCT = 0.01      # 1% trailing distance
 KELLY_FRACTION = 0.25         # fractional Kelly (25%)
 
 # ─── Signals: minimum conditions to enter ────────────────────────────────────
-MIN_SIGNALS_REQUIRED = 3      # out of 4 conditions
+MIN_SIGNALS_REQUIRED = 2      # out of 4 conditions (3 was too restrictive: ~1 trade/month)
 
 # ─── Backtesting ─────────────────────────────────────────────────────────────
 BACKTEST_MONTHS = 12
