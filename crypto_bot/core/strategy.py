@@ -38,13 +38,34 @@ def prepare_dataframe(df_1h: pd.DataFrame, df_4h: pd.DataFrame) -> pd.DataFrame:
 
 
 def evaluate_entry(df: pd.DataFrame) -> Signal:
-    """Evaluate the last closed candle for an entry signal."""
+    """Evaluate the last closed candle for an entry signal.
+
+    Gate: price must be above EMA(200) on 4h (macro bull trend) — always required.
+    Then at least MIN_SIGNALS_REQUIRED of the 3 technical signals must also fire.
+    This avoids entering longs during macro downtrends.
+    """
     row = df.iloc[-1]
     symbol = "UNKNOWN"  # filled by caller
     price = float(row["close"])
     ts = df.index[-1]
 
-    conditions: list[tuple[bool, str]] = [
+    # ── Mandatory macro filter ────────────────────────────────────────────────
+    ema_macro = row.get("ema_macro_4h")
+    macro_bull = (
+        ema_macro is not None
+        and not pd.isna(ema_macro)
+        and price > float(ema_macro)
+    )
+    if not macro_bull:
+        return Signal("hold", symbol, price, ["Blocked: price below EMA(200) 4h"], 0, ts)
+
+    # Volatility filter
+    if bool(row.get("high_volatility", False)):
+        logger.debug("Entry blocked: abnormally high volatility (ATR filter)")
+        return Signal("hold", symbol, price, ["Blocked: high volatility"], 0, ts)
+
+    # ── Technical signals (need MIN_SIGNALS_REQUIRED of these 3) ─────────────
+    technical: list[tuple[bool, str]] = [
         (
             bool(row.get("rsi_cross_up_oversold", 0)),
             f"RSI({config.RSI_PERIOD}) crossed above {config.RSI_OVERSOLD}",
@@ -57,25 +78,15 @@ def evaluate_entry(df: pd.DataFrame) -> Signal:
             bool(row.get("macd_hist_cross_up", 0)),
             "MACD histogram flipped positive",
         ),
-        (
-            not pd.isna(row.get("ema_macro_4h"))
-            and price > float(row.get("ema_macro_4h", 0)),
-            f"Price above EMA({config.EMA_MACRO}) on 4h (macro bull trend)",
-        ),
     ]
 
-    true_conditions = [(ok, reason) for ok, reason in conditions if ok]
-    signal_count = len(true_conditions)
-    reasons = [r for _, r in true_conditions]
-
-    # Volatility filter
-    if bool(row.get("high_volatility", False)):
-        logger.debug("Entry blocked: abnormally high volatility (ATR filter)")
-        return Signal("hold", symbol, price, ["Blocked: high volatility"], 0, ts)
+    matched = [(ok, r) for ok, r in technical if ok]
+    signal_count = len(matched)
+    reasons = [r for _, r in matched] + [f"Price above EMA({config.EMA_MACRO}) on 4h"]
 
     if signal_count >= config.MIN_SIGNALS_REQUIRED:
         logger.info(
-            f"BUY signal ({signal_count}/4 conditions): {', '.join(reasons)}"
+            f"BUY signal ({signal_count}/3 technical + macro): {', '.join(reasons)}"
         )
         return Signal("buy", symbol, price, reasons, signal_count, ts)
 
