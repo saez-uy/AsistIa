@@ -265,6 +265,57 @@
       font-weight: 500;
     }
 
+    /* ── Percentage meter ── */
+    .verdict-pct-wrap {
+      margin: 18px auto 0;
+      max-width: 280px;
+    }
+    .verdict-pct-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+    .verdict-pct-label span:first-child {
+      font-size: 0.82rem;
+      opacity: 0.85;
+      font-weight: 400;
+    }
+    .verdict-pct-num {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.6rem;
+      font-weight: 700;
+    }
+    .verdict-pct-bar-bg {
+      height: 10px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.25);
+      overflow: hidden;
+    }
+    .verdict-pct-bar-fill {
+      height: 100%;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.85);
+      transition: width 0.7s cubic-bezier(.4,0,.2,1);
+    }
+
+    /* ── Time-of-day indicator ── */
+    .time-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 14px;
+      padding: 7px 14px;
+      border-radius: 20px;
+      font-size: 0.83rem;
+      font-weight: 500;
+      background: rgba(255,255,255,0.18);
+      backdrop-filter: blur(4px);
+    }
+    .time-badge.good  { background: rgba(100,220,100,0.25); }
+    .time-badge.ok    { background: rgba(255,220,80,0.25); }
+    .time-badge.bad   { background: rgba(255,90,60,0.22); }
+
     /* ── "¿Por qué?" collapsible ── */
     .collapse-toggle {
       width: 100%;
@@ -505,6 +556,20 @@
     <div id="verdict-text" class="verdict-text">—</div>
     <div id="verdict-subtitle" class="verdict-subtitle">—</div>
     <span id="verdict-score" class="verdict-score">Puntuación: 0</span>
+
+    <!-- Percentage meter -->
+    <div class="verdict-pct-wrap" id="verdict-pct-wrap">
+      <div class="verdict-pct-label">
+        <span>Necesidad de riego</span>
+        <span class="verdict-pct-num" id="verdict-pct-num">—</span>
+      </div>
+      <div class="verdict-pct-bar-bg">
+        <div class="verdict-pct-bar-fill" id="verdict-pct-bar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Time of day indicator -->
+    <div id="time-badge" class="time-badge" style="margin-top:14px;"></div>
   </div>
 
   <!-- ── ¿Por qué? ── -->
@@ -818,6 +883,39 @@ function computeScore(weather, riegosHistorial) {
 }
 
 /* =====================================================================
+   SCORE → PERCENTAGE (0–100%)
+   Maps the scoring range [-80, +80] linearly to [0%, 100%].
+   Below -80 → 0%, above +80 → 100%.
+   ===================================================================== */
+function scoreToPercent(score) {
+  const clamped = Math.max(-80, Math.min(80, score));
+  return Math.round((clamped + 80) / 160 * 100);
+}
+
+/* =====================================================================
+   TIME-OF-DAY RECOMMENDATION
+   Best:       5–9 h (early morning) and 16–19 h (late afternoon)
+   Acceptable: 9–11 h and 19–21 h
+   Avoid:      11–16 h (midday heat) and 21–5 h (cold/damp night)
+   ===================================================================== */
+function getTimeOfDayInfo() {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 9) {
+    return { level: 'good', icon: '🌅', text: 'Buen momento para regar — mañana temprana' };
+  } else if (hour >= 9 && hour < 11) {
+    return { level: 'ok', icon: '🌤️', text: 'Aceptable, aunque mejor más temprano' };
+  } else if (hour >= 11 && hour < 16) {
+    return { level: 'bad', icon: '☀️', text: 'No ideal — el calor del mediodía evapora el agua' };
+  } else if (hour >= 16 && hour < 19) {
+    return { level: 'good', icon: '🌇', text: 'Buen momento para regar — tarde' };
+  } else if (hour >= 19 && hour < 21) {
+    return { level: 'ok', icon: '🌆', text: 'Aceptable, pero el rocío nocturno puede generar hongos' };
+  } else {
+    return { level: 'bad', icon: '🌙', text: 'Muy tarde — el frío nocturno no es recomendable' };
+  }
+}
+
+/* =====================================================================
    VERDICT from score + override logic
    ===================================================================== */
 function getVerdict(score, lastWateredDays) {
@@ -966,13 +1064,24 @@ function weatherCodeEmoji(code) {
 
 function renderVerdict(verdict, score) {
   const card = document.getElementById('verdict-card');
-  // Remove old verdict classes
   card.classList.remove('verdict-no','verdict-opcional','verdict-si','verdict-urgente');
   card.classList.add(verdict.cssClass);
-  document.getElementById('verdict-icon').textContent    = verdict.icon;
-  document.getElementById('verdict-text').textContent    = verdict.text;
+  document.getElementById('verdict-icon').textContent     = verdict.icon;
+  document.getElementById('verdict-text').textContent     = verdict.text;
   document.getElementById('verdict-subtitle').textContent = verdict.subtitle;
-  document.getElementById('verdict-score').textContent   = `Puntuación: ${score > 0 ? '+' : ''}${score}`;
+  document.getElementById('verdict-score').textContent    = `Puntuación: ${score > 0 ? '+' : ''}${score}`;
+
+  // Percentage meter
+  const pct = scoreToPercent(score);
+  document.getElementById('verdict-pct-num').textContent  = `${pct}%`;
+  document.getElementById('verdict-pct-bar').style.width  = `${pct}%`;
+
+  // Time-of-day badge
+  const timeInfo = getTimeOfDayInfo();
+  const badge = document.getElementById('time-badge');
+  badge.className = `time-badge ${timeInfo.level}`;
+  badge.innerHTML = `<span>${timeInfo.icon}</span><span>${timeInfo.text}</span>`;
+
   show('verdict-card');
 }
 
