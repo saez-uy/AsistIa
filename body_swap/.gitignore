@@ -1,9 +1,0 @@
-input/
-output/
-generated_bodies/
-models/first-order-model/
-models/*.pth.tar
-models/*.yaml
-__pycache__/
-*.pyc
-.env
