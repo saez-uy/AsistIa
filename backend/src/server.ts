@@ -1,4 +1,4 @@
-import './config/env.js'; // Valida variables de entorno al arrancar
+import './config/env.js';
 import { env } from './config/env.js';
 import Fastify from 'fastify';
 import helmet from '@fastify/helmet';
@@ -8,12 +8,17 @@ import { logger } from './utils/logger.js';
 import { AppError } from './utils/errors.js';
 import { prisma } from './services/prisma.service.js';
 import { redis } from './services/redis.service.js';
+import { startWorkers, stopWorkers } from './services/queue.service.js';
 
-const app = Fastify({ logger: false });
+// rawBody necesario para verificar la firma del webhook de Meta
+const app = Fastify({ logger: false, bodyLimit: 1_048_576 });
 
 // ── Plugins de seguridad ──────────────────────────────────────────────────────
 
-await app.register(helmet);
+await app.register(helmet, {
+  // Permite que el webhook de Meta reciba el raw body
+  contentSecurityPolicy: false,
+});
 
 await app.register(cors, {
   origin: env.FRONTEND_URL,
@@ -24,6 +29,16 @@ await app.register(rateLimit, {
   global: true,
   max: 100,
   timeWindow: '1 minute',
+});
+
+// Guardar el rawBody para verificar firmas HMAC (webhook de Meta)
+app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
+  (req as unknown as { rawBody: Buffer }).rawBody = body as Buffer;
+  try {
+    done(null, JSON.parse((body as Buffer).toString('utf8')));
+  } catch (err) {
+    done(err as Error);
+  }
 });
 
 // ── Módulos ───────────────────────────────────────────────────────────────────
@@ -50,7 +65,6 @@ app.setErrorHandler((error, _req, reply) => {
   if (error instanceof AppError) {
     return reply.status(error.statusCode).send({ error: error.message, code: error.code });
   }
-  // Rate limit error
   if (error.statusCode === 429) {
     return reply.status(429).send({ error: 'Demasiadas solicitudes', code: 'RATE_LIMIT' });
   }
@@ -68,14 +82,23 @@ const start = async () => {
   try {
     await prisma.$connect();
     await redis.connect();
+    startWorkers();
     await app.listen({ port: env.PORT, host: '0.0.0.0' });
     logger.info(`🚀 FlowChat API corriendo en http://localhost:${env.PORT}`);
   } catch (err) {
     logger.error('Error al iniciar el servidor:', err);
+    await stopWorkers();
     await prisma.$disconnect();
     await redis.quit();
     process.exit(1);
   }
 };
+
+process.on('SIGTERM', async () => {
+  await stopWorkers();
+  await prisma.$disconnect();
+  await redis.quit();
+  process.exit(0);
+});
 
 start();
