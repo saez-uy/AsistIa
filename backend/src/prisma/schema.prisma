@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  FREE    // hasta 2 flujos, 100 conversaciones/mes
+  STARTER // hasta 10 flujos, 1000 conversaciones/mes
+  PRO     // flujos ilimitados, conversaciones ilimitadas + IA
+}
+
+enum ConvStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+enum Direction {
+  INBOUND  // Del usuario al bot
+  OUTBOUND // Del bot al usuario
+}
+
+enum MsgType {
+  TEXT
+  IMAGE
+  BUTTON
+  LIST
+  TEMPLATE
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String
+  name         String
+  plan         Plan         @default(FREE)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  connections  Connection[]
+  flows        Flow[]
+  contacts     Contact[]
+}
+
+model Connection {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phoneNumberId String   @unique
+  displayPhone  String
+  accessToken   String   // Encriptado con AES-256-GCM
+  businessName  String
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  flows         Flow[]
+}
+
+model Flow {
+  id              String         @id @default(cuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectionId    String
+  connection      Connection     @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  isActive        Boolean        @default(false)
+  triggerKeyword  String?
+  nodes           Json           // Nodos serializados de React Flow
+  edges           Json           // Conexiones entre nodos
+  aiEnabled       Boolean        @default(false)
+  aiSystemPrompt  String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  conversations   Conversation[]
+}
+
+model Contact {
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone         String
+  name          String?
+  lastSeen      DateTime?
+  metadata      Json?
+  createdAt     DateTime       @default(now())
+  conversations Conversation[]
+
+  @@unique([userId, phone])
+}
+
+model Conversation {
+  id            String     @id @default(cuid())
+  flowId        String?
+  flow          Flow?      @relation(fields: [flowId], references: [id], onDelete: SetNull)
+  contactId     String
+  contact       Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  currentNodeId String?
+  status        ConvStatus @default(ACTIVE)
+  variables     Json?      // Variables capturadas durante la conversación
+  messages      Message[]
+  startedAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction      Direction
+  content        String
+  type           MsgType      @default(TEXT)
+  waMessageId    String?
+  sentAt         DateTime     @default(now())
+}
