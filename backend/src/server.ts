@@ -4,12 +4,10 @@ import Fastify from 'fastify';
 import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
-import jwt from '@fastify/jwt';
-import { PrismaClient } from '@prisma/client';
 import { logger } from './utils/logger.js';
 import { AppError } from './utils/errors.js';
-
-export const prisma = new PrismaClient();
+import { prisma } from './services/prisma.service.js';
+import { redis } from './services/redis.service.js';
 
 const app = Fastify({ logger: false });
 
@@ -26,10 +24,6 @@ await app.register(rateLimit, {
   global: true,
   max: 100,
   timeWindow: '1 minute',
-});
-
-await app.register(jwt, {
-  secret: env.JWT_ACCESS_SECRET,
 });
 
 // ── Módulos ───────────────────────────────────────────────────────────────────
@@ -73,11 +67,13 @@ app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }))
 const start = async () => {
   try {
     await prisma.$connect();
+    await redis.connect();
     await app.listen({ port: env.PORT, host: '0.0.0.0' });
     logger.info(`🚀 FlowChat API corriendo en http://localhost:${env.PORT}`);
   } catch (err) {
     logger.error('Error al iniciar el servidor:', err);
     await prisma.$disconnect();
+    await redis.quit();
     process.exit(1);
   }
 };
