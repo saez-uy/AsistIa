@@ -154,21 +154,7 @@ export default function FlowEditorPage() {
     [edges, setEdges, storeSetEdges]
   );
 
-  const onNodesChangeHandler = useCallback(
-    (changes: Parameters<typeof onNodesChange>[0]) => {
-      onNodesChange(changes);
-    },
-    [onNodesChange]
-  );
-
-  const onEdgesChangeHandler = useCallback(
-    (changes: Parameters<typeof onEdgesChange>[0]) => {
-      onEdgesChange(changes);
-    },
-    [onEdgesChange]
-  );
-
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+  const onNodeClick = useCallback((_evt: React.MouseEvent, node: Node) => {
     setSelectedNode(node as Node<BaseNodeData>);
   }, []);
 
@@ -322,8 +308,8 @@ export default function FlowEditorPage() {
           <ReactFlow
             nodes={nodes}
             edges={edges}
-            onNodesChange={onNodesChangeHandler}
-            onEdgesChange={onEdgesChangeHandler}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}

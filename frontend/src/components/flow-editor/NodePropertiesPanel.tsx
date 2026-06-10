@@ -1,4 +1,3 @@
-import React from 'react';
 import { type Node } from 'reactflow';
 import { Plus, Trash2 } from 'lucide-react';
 import { type BaseNodeData } from './nodes/BaseNode';

@@ -1,4 +1,3 @@
-import React from 'react';
 import { type NodeProps } from 'reactflow';
 import { HelpCircle } from 'lucide-react';
 import BaseNode, { type BaseNodeData } from './BaseNode';
